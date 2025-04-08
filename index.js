@@ -1,6 +1,7 @@
 const http = require("node:http");
 const socketIO = require("socket.io");
 const ChatData = require("./models/chatdata.model");
+const { getChatGptResponse } = require("./gpt");
 
 //config .env
 require("dotenv").config();
@@ -32,14 +33,23 @@ io.on("connection", async (socket) => {
   io.emit("clients_count", io.engine.clientsCount); // Emitir el número de clientes conectados
 
   //Recupero los ultimos 5 mensajes
-  const messages = await ChatData.find().sort({ timestamp: -1 }).limit(5);
+  const messages = await ChatData.find().sort("-createdAt").limit(5);
   // Envio los mensajes al cliente que se conecta
-  socket.emit("chat_init", messages.reverse());
+  socket.emit("chat_init", messages);
 
   socket.on("chat_message", async (data) => {
-    // Guardar el mensaje, que llega del front, en la base de datos
-    await ChatData.create(data);
-    io.emit("chat_message_server", data);
+    if (data.message.startsWith("/gpt")) {
+      const pregunta = data.message.substring(5); // Eliminar "/gpt" del mensaje
+      const gptResponse = await getChatGptResponse(pregunta);
+      io.emit("chat_message_server", {
+        username: "GPT",
+        message: gptResponse,
+      });
+    } else {
+      // Guardar el mensaje, que llega del front, en la base de datos
+      await ChatData.create(data);
+      io.emit("chat_message_server", data);
+    }
   });
 
   socket.on("disconnect", () => {
